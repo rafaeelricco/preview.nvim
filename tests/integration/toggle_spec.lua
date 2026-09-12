@@ -259,6 +259,18 @@ describe("preview toggle", function()
     assert.is_true(notified(vim.log.levels.ERROR, "bogus"))
   end)
 
+  it("reports an unknown set_mode mode without throwing", function()
+    local preview = load()
+    local win = open_fixture()
+    local winbar_before = vim.wo[win].winbar
+    local conceal_before = vim.wo[win].conceallevel
+    assert.is_true(pcall(preview.set_mode, win, "bogus"))
+    assert.equals("markdown", preview.mode(win))
+    assert.equals(winbar_before, vim.wo[win].winbar)
+    assert.equals(conceal_before, vim.wo[win].conceallevel)
+    assert.is_true(notified(vim.log.levels.ERROR, "bogus"))
+  end)
+
   it("keeps modes working when the winbar is disabled", function()
     local preview, state = load({ winbar = { enabled = false } })
     local win, buf = open_fixture()

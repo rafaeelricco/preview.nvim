@@ -155,7 +155,7 @@ describe("preview composed screen", function()
       if vim.trim(line) == "code panel" then code = i end
       if line == ("─"):rep(60) then rule = i end
     end
-    assert.equals(5, heading)
+    assert.equals(4, heading)
     assert.is_not_nil(code)
     assert.is_not_nil(rule)
     assert.equals("", rows[rule + 1])
@@ -193,7 +193,7 @@ describe("preview composed screen", function()
       vim.cmd('file /tmp/preview-renamed.Markdown')
     ]])
     assert.equals("preview", ui.exec("return require('preview').mode()"))
-    assert.equals("Heading", vim.trim(ui.lines()[5]))
+    assert.equals("Heading", vim.trim(ui.lines()[4]))
   end)
 
   it("preserves each buffer's baseline and selected mode through A to B to A", function()
@@ -351,13 +351,20 @@ describe("preview composed screen", function()
     end
   end)
 
-  it("tapers the gap above each heading level", function()
-    open({ "# One", "", "## Two", "", "### Three", "", "#### Four", "", "##### Five", "", "###### Six", "", "text" })
-    -- Row 1 is the winbar. A document-opening heading takes no leading gap, and
-    -- the source blank between every pair is replaced by the designed one.
+  it("draws one blank row above every heading whatever the source spacing", function()
+    -- A deliberately ragged source: no blank at all before Two and Six, two
+    -- before Three, three before Five. Preview owns the rhythm rather than
+    -- inheriting the file's, so it adds rows where the source is short and
+    -- hides the surplus where it is long, and every pair still comes out at
+    -- the designed single row.
+    open({
+      "# One", "## Two", "", "", "### Three", "", "#### Four", "", "", "",
+      "##### Five", "###### Six", "", "text",
+    })
+    -- Row 1 is the winbar; a document-opening heading takes no leading gap.
     assert.are.same({
-      "One", "", "", "Two", "", "", "Three", "", "Four", "", "Five", "", "Six", "", "text",
-    }, vim.list_slice(ui.lines(), 2, 16))
+      "One", "", "Two", "", "Three", "", "Four", "", "Five", "", "Six", "", "text",
+    }, vim.list_slice(ui.lines(), 2, 14))
   end)
 
   it("keeps adjacent code panels apart instead of merging them into one slab", function()

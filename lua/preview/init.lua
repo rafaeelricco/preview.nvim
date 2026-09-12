@@ -29,6 +29,14 @@ local function is_subcommand(arg)
   return vim.tbl_contains(SUBCOMMANDS, arg)
 end
 
+--- Guards the public API: an unknown mode must not reach `apply_entry`, which
+--- mutates the window before `state.set_window` validates the entry.
+---@param value any
+---@return boolean
+local function is_mode(value)
+  return value == "preview" or value == "markdown"
+end
+
 --- File names decide eligibility; unnamed Markdown buffers still work.
 ---@param buf integer
 ---@return boolean
@@ -518,14 +526,20 @@ function M.config()
   return cfg and vim.deepcopy(cfg) or nil
 end
 
---- Switches a managed window's mode. No-op for unmanaged or closed windows
---- and when the mode is unchanged. Entering preview saves the window options
---- it touches and applies the reading view; leaving restores them. The renderer
---- attaches on the buffer's first preview window and detaches when the last
---- one leaves.
+--- Switches a managed window's mode. No-op for unmanaged or closed windows,
+--- when the mode is unchanged, and when `mode` is not a real mode -- an
+--- unknown mode is reported like an unknown :Preview subcommand rather than
+--- thrown, since the window is mutated before state validates the entry.
+--- Entering preview saves the window options it touches and applies the
+--- reading view; leaving restores them. The renderer attaches on the buffer's
+--- first preview window and detaches when the last one leaves.
 ---@param win integer
 ---@param mode preview.Mode
 function M.set_mode(win, mode)
+  if not is_mode(mode) then
+    log.error("set_mode", ("unknown mode %q (expected preview or markdown)"):format(tostring(mode)))
+    return
+  end
   if cfg == nil or not vim.api.nvim_win_is_valid(win) or state.mode(win) == mode then
     return
   end

@@ -52,7 +52,7 @@ describe("render.rhythm", function()
     -- Every heading is nested one `section` deeper than the last, so these
     -- gaps only come out right if `blocks` descends through every level
     -- rather than stopping at document's direct children.
-    local expected = { [2] = 2, [4] = 2, [6] = 1, [8] = 1, [10] = 1, [12] = 3 }
+    local expected = { [2] = 1, [4] = 1, [6] = 1, [8] = 1, [10] = 1, [12] = 2 }
     local previous = { [2] = 0, [4] = 2, [6] = 4, [8] = 6, [10] = 8, [12] = 10 }
     for _, row in ipairs({ 2, 4, 6, 8, 10, 12 }) do
       assert.equals(expected[row], drawn_gap(by_row, ctx, previous[row], row), "row " .. row)
@@ -60,10 +60,10 @@ describe("render.rhythm", function()
   end)
 
   it("collapses a gap to the max of the two margins, never their sum", function()
-    -- H1 -> H2: heading.below[1] = 1, heading.above[2] = 2; the sum would be 3.
-    assert.equals(2, drawn_gap(by_row, ctx, 0, 2))
-    -- H6 -> the bare "#": heading.below[6] = 1, heading.above[1] = 3.
-    assert.equals(3, drawn_gap(by_row, ctx, 10, 12))
+    -- H1 -> H2: heading.below[1] = 1, heading.above[2] = 1; the sum would be 2.
+    assert.equals(1, drawn_gap(by_row, ctx, 0, 2))
+    -- H6 -> the bare "#": heading.below[6] = 1, heading.above[1] = 2.
+    assert.equals(2, drawn_gap(by_row, ctx, 10, 12))
   end)
 
   it("reuses the source's blank rows and hides only the surplus", function()
@@ -79,9 +79,9 @@ describe("render.rhythm", function()
   end)
 
   it("adds virtual rows only where the source is short", function()
-    -- One blank row where an H2 wants two: the blank stays and a single
+    -- One blank row where an H1 wants two: the blank stays and a single
     -- virtual row makes up the difference.
-    local tight, tctx = h.buffer_with({ "para", "", "## Heading" })
+    local tight, tctx = h.buffer_with({ "para", "", "# Heading" })
     local rows = h.marks_for(tight, tctx)
     assert.equals(0, #h.find(rows, 1, is_blank_conceal))
     local gap = h.find(rows, 2, is_gap)
