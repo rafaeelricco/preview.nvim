@@ -5,13 +5,29 @@
 ---@field enabled boolean
 
 ---@class preview.RenderConfig
----@field heading { icons: string[], space_above: integer[] }  -- one blank-line count per level
----@field list { bullets: string[] }
----@field checkbox { checked: string, unchecked: string }
+---@field heading preview.HeadingConfig
+---@field spacing preview.SpacingConfig
+---@field list { bullets: string[], gap: integer }
+---@field checkbox { checked: string, unchecked: string, gap: integer }
 ---@field quote { bar: string }
 ---@field code { label: "left"|"right"|false, padding: integer }
----@field link { icon: string }
+---@field link { icon: string, gap: integer }
 ---@field table { border: boolean, row_lines: boolean }
+
+---@class preview.HeadingConfig  -- one entry per level, H1..H6
+---@field icons string[]
+---@field bold boolean[]  -- the terminal draws bold cells with its bold font face
+
+---@alias preview.Margin { above: integer, below: integer }
+
+---@class preview.SpacingConfig  -- blank rows between blocks; neighbours collapse to the larger
+---@field heading { above: integer[], below: integer[] }
+---@field paragraph preview.Margin
+---@field list preview.Margin
+---@field quote preview.Margin
+---@field code preview.Margin
+---@field table preview.Margin
+---@field rule preview.Margin
 
 ---@class preview.ViewConfig  -- reading-column layout
 ---@field gutter integer      -- 0..9 minimum margin cells

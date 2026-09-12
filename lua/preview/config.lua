@@ -10,12 +10,24 @@ M.defaults = {
   view = { gutter = 2, max_width = 0, center = true },
   highlights = {},
   render = {
-    heading = { icons = { "", "", "", "", "", "" }, space_above = { 2, 1, 0, 0, 0, 0 } },
-    list = { bullets = { "•", "◦", "▪", "▫" } },
-    checkbox = { checked = "󰄲", unchecked = "󰄱" },
+    heading = {
+      icons = { "", "", "", "", "", "" },
+      bold = { true, true, true, false, false, false },
+    },
+    spacing = {
+      heading = { above = { 3, 2, 2, 1, 1, 1 }, below = { 1, 1, 1, 1, 1, 1 } },
+      paragraph = { above = 1, below = 1 },
+      list = { above = 1, below = 1 },
+      quote = { above = 1, below = 1 },
+      code = { above = 1, below = 1 },
+      table = { above = 1, below = 1 },
+      rule = { above = 1, below = 1 },
+    },
+    list = { bullets = { "•", "◦", "▪", "▫" }, gap = 1 },
+    checkbox = { checked = "󰄲", unchecked = "󰄱", gap = 1 },
     quote = { bar = "▎" },
     code = { label = false, padding = 2 },
-    link = { icon = "" },
+    link = { icon = "", gap = 1 },
     table = { border = true, row_lines = true },
   },
 }
@@ -105,8 +117,29 @@ end
 
 ---@param count integer|nil
 ---@return fun(value: any): boolean
+local function boolean_list(count)
+  return list_of(count, function(item) return type(item) == "boolean" end)
+end
+
+---@param count integer|nil
+---@return fun(value: any): boolean
 local function string_list(count)
   return list_of(count, function(item) return type(item) == "string" end)
+end
+
+---@param s preview.SpacingConfig
+---@return string|nil
+local function validate_spacing(s)
+  local err = check("render.spacing.heading", s.heading, "table")
+    or check("render.spacing.heading.above", s.heading.above, list_of(6, is_count), "list of exactly 6 integers >= 0")
+    or check("render.spacing.heading.below", s.heading.below, list_of(6, is_count), "list of exactly 6 integers >= 0")
+  for _, kind in ipairs({ "paragraph", "list", "quote", "code", "table", "rule" }) do
+    err = err
+      or check("render.spacing." .. kind, s[kind], "table")
+      or check("render.spacing." .. kind .. ".above", s[kind].above, is_count, "integer >= 0")
+      or check("render.spacing." .. kind .. ".below", s[kind].below, is_count, "integer >= 0")
+  end
+  return err
 end
 
 ---@param w preview.WinbarConfig
@@ -141,12 +174,16 @@ end
 local function validate_render(r)
   return check("render.heading", r.heading, "table")
     or check("render.heading.icons", r.heading.icons, string_list(6), "list of exactly 6 strings")
-    or check("render.heading.space_above", r.heading.space_above, list_of(6, is_count), "list of exactly 6 integers >= 0")
+    or check("render.heading.bold", r.heading.bold, boolean_list(6), "list of exactly 6 booleans")
+    or check("render.spacing", r.spacing, "table")
+    or validate_spacing(r.spacing)
     or check("render.list", r.list, "table")
     or check("render.list.bullets", r.list.bullets, string_list(nil), "non-empty list of strings")
+    or check("render.list.gap", r.list.gap, is_count, "integer >= 0")
     or check("render.checkbox", r.checkbox, "table")
     or check("render.checkbox.checked", r.checkbox.checked, "string")
     or check("render.checkbox.unchecked", r.checkbox.unchecked, "string")
+    or check("render.checkbox.gap", r.checkbox.gap, is_count, "integer >= 0")
     or check("render.quote", r.quote, "table")
     or check("render.quote.bar", r.quote.bar, "string")
     or check("render.code", r.code, "table")
@@ -154,6 +191,7 @@ local function validate_render(r)
     or check("render.code.padding", r.code.padding, is_count, "integer >= 0")
     or check("render.link", r.link, "table")
     or check("render.link.icon", r.link.icon, "string")
+    or check("render.link.gap", r.link.gap, is_count, "integer >= 0")
     or check("render.table", r.table, "table")
     or check("render.table.border", r.table.border, "boolean")
     or check("render.table.row_lines", r.table.row_lines, "boolean")
