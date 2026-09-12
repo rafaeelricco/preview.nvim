@@ -53,18 +53,32 @@ require("preview").setup({
   },
   highlights = {},                    -- full specs that replace derived groups, see Highlights
   render = {
-    heading = { icons = { "", "", "", "", "", "" }, space_above = { 2, 1, 0, 0, 0, 0 } }, -- no icons; virtual blank lines above each level
-    list = { bullets = { "•", "◦", "▪", "▫" } },
-    checkbox = { checked = "󰄲", unchecked = "󰄱" },
+    heading = {
+      icons = { "", "", "", "", "", "" },               -- no icons
+      bold = { true, true, true, false, false, false },   -- the terminal's bold font face, per level
+    },
+    spacing = {
+      heading = { above = { 3, 2, 2, 1, 1, 1 }, below = { 1, 1, 1, 1, 1, 1 } },
+      paragraph = { above = 1, below = 1 },
+      list = { above = 1, below = 1 },
+      quote = { above = 1, below = 1 },
+      code = { above = 1, below = 1 },
+      table = { above = 1, below = 1 },
+      rule = { above = 1, below = 1 },
+    },
+    list = { bullets = { "•", "◦", "▪", "▫" }, gap = 1 },
+    checkbox = { checked = "󰄲", unchecked = "󰄱", gap = 1 },
     quote = { bar = "▎" },
     code = { label = false, padding = 2 }, -- label: "left" | "right" | false
-    link = { icon = "" },             -- "" for no icon
+    link = { icon = "", gap = 1 },     -- icon: "" for no icon
     table = { border = true, row_lines = true },
   },
 })
 ```
 
-Wrong types fail `setup()` with an error naming the key path. `view.gutter` must be an integer from 0 to 9; `view.wrap`, when set, must be a boolean; `view.max_width` and `render.code.padding` must be nonnegative integers; `render.heading.space_above` must be a list of exactly six nonnegative integers, one per level. Unknown keys warn once. `setup()` is idempotent.
+Wrong types fail `setup()` with an error naming the key path. `view.gutter` must be an integer from 0 to 9; `view.wrap`, when set, must be a boolean; `view.max_width` and `render.code.padding` must be nonnegative integers; `render.heading.bold` must be a list of exactly six booleans, one per level; `render.spacing.heading.above` and `render.spacing.heading.below` must each be a list of exactly six nonnegative integers, one per level; every other `render.spacing.*` entry (`paragraph`, `list`, `quote`, `code`, `table` and `rule`, each with `above` and `below`) must be a nonnegative integer; and `render.list.gap`, `render.checkbox.gap` and `render.link.gap` must each be a nonnegative integer. Unknown keys warn once. `setup()` is idempotent.
+
+`render.spacing` is the vertical rhythm preview draws, not the one in the source. The gap shown between two neighbouring blocks is the larger of the previous block's `below` and the next block's `above`, never their sum, so a heading followed by three blank source lines and a paragraph renders with one gap rather than three stacked blank rows. Preview reaches that gap by adjusting the difference: it reuses the source's own blank rows, hides only the surplus, and adds virtual rows only where the source is short. Where the source already matches the rhythm, nothing is drawn or hidden at all.
 
 ## Preview mode
 
@@ -92,25 +106,25 @@ Lua API: `require("preview").setup(opts)`, `.set_mode(win, mode)`, `.toggle(win?
 
 Every `Preview*` group is computed from the active palette, not linked to a stock group. `highlights.apply()` resolves `Normal`, `Comment`, `CursorLine`, `WinSeparator` and `DiagnosticInfo` with `nvim_get_hl(0, { name = ..., link = false })` and defines each group with the concrete values below. A color the source group does not define stays unset, so the group inherits it; the plugin never uses a literal color.
 
-| Group                    | Derived from                       |
-| ------------------------ | ---------------------------------- |
-| `PreviewH1`..`PreviewH6` | `Normal` fg, bold                  |
-| `PreviewBold`            | `Normal` fg, bold                  |
-| `PreviewItalic`          | italic only                        |
-| `PreviewCodeBlock`       | `CursorLine` bg                    |
-| `PreviewCodeInline`      | `Normal` fg, `CursorLine` bg       |
-| `PreviewCodeLabel`       | `Comment` fg, `CursorLine` bg      |
-| `PreviewBullet`          | `Normal` fg                        |
-| `PreviewCheckbox`        | `DiagnosticInfo` fg                |
-| `PreviewQuote`           | `WinSeparator` fg                  |
-| `PreviewLink`            | `DiagnosticInfo` fg, underline     |
-| `PreviewTable`           | `WinSeparator` fg                  |
-| `PreviewTableHeader`     | `Normal` fg, bold                  |
-| `PreviewTableBody`       | `Normal` fg                        |
-| `PreviewRule`            | `WinSeparator` fg                  |
-| `PreviewWinbar`          | `Comment` fg, `Normal` bg          |
-| `PreviewButtonActive`    | `Normal` fg, `CursorLine` bg, bold |
-| `PreviewButtonInactive`  | `Comment` fg, `Normal` bg          |
+| Group                    | Derived from                                |
+| ------------------------ | ------------------------------------------- |
+| `PreviewH1`..`PreviewH6` | `Normal` fg, bold per `render.heading.bold` |
+| `PreviewBold`            | `Normal` fg, bold                           |
+| `PreviewItalic`          | italic only                                 |
+| `PreviewCodeBlock`       | `CursorLine` bg                             |
+| `PreviewCodeInline`      | `Normal` fg, `CursorLine` bg                |
+| `PreviewCodeLabel`       | `Comment` fg, `CursorLine` bg               |
+| `PreviewBullet`          | `Normal` fg                                 |
+| `PreviewCheckbox`        | `DiagnosticInfo` fg                         |
+| `PreviewQuote`           | `WinSeparator` fg                           |
+| `PreviewLink`            | `DiagnosticInfo` fg, underline              |
+| `PreviewTable`           | `WinSeparator` fg                           |
+| `PreviewTableHeader`     | `Normal` fg, bold                           |
+| `PreviewTableBody`       | `Normal` fg                                 |
+| `PreviewRule`            | `WinSeparator` fg                           |
+| `PreviewWinbar`          | `Comment` fg, `Normal` bg                   |
+| `PreviewButtonActive`    | `Normal` fg, `CursorLine` bg, bold          |
+| `PreviewButtonInactive`  | `Comment` fg, `Normal` bg                   |
 
 The groups are re-derived on `ColorScheme` and `OptionSet background` (from a scheduled callback, so a colorscheme that repaints on those events is read after it ran) and are not `default`, so a plain `nvim_set_hl` in your config is overwritten on the next palette change. Override through `setup` instead; each entry is a complete spec that replaces the derived group on every re-derivation:
 
@@ -134,8 +148,9 @@ The test harness isolates Neovim from your personal configuration and checks com
 
 ## Limitations
 
-- Terminals do not provide proportional font sizes or rounded corners, so headings use emphasis and code panels are rectangular.
+- Terminals do not provide proportional font sizes or rounded corners, so heading hierarchy comes from weight and `render.spacing`, and code panels are rectangular. A terminal draws bold cells with its own bold font face, so how much heavier the upper levels look is set by your terminal's bold font, not by the plugin: in Ghostty, `font-style-bold` against `font-style`.
 - Very long concealed spans can still occupy native wrapped rows, which may appear blank.
+- Surplus blank rows between blocks are hidden, not removed, so `j` and `k` still step through them and the cursor can appear to pause on a row you cannot see. Nothing is lost: typing into such a row makes it non-blank and the next redraw shows it again.
 - Third-party inline decorations can change display width, so exact alignment with them is not guaranteed.
 - Two windows on the same buffer in different modes both work, with rendering scoped to each preview window.
 - Not rendered in v1: setext headings, footnotes, HTML blocks, images, multi-line links.
