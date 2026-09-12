@@ -503,7 +503,7 @@ function M.setup(opts)
   cfg = resolved
   winbar.configure(cfg.winbar)
   render.configure(cfg)
-  highlights.configure(cfg.highlights)
+  highlights.configure(cfg.highlights, cfg.render.heading)
   highlights.apply()
   create_autocmds()
   create_command()

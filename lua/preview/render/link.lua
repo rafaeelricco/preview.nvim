@@ -27,7 +27,7 @@ return {
       marks[#marks + 1] = {
         row = tsr,
         col = tsc,
-        opts = { virt_text = { { icon .. " ", "PreviewLink" } }, virt_text_pos = "inline" },
+        opts = { virt_text = { { icon .. (" "):rep(ctx.config.link.gap), "PreviewLink" } }, virt_text_pos = "inline" },
       }
     end
     return marks
