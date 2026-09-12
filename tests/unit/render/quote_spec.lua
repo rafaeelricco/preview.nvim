@@ -14,18 +14,18 @@ describe("render.quote", function()
   end
 
   it("inserts the bar on the quote marker", function()
-    -- row 17: "> outer quote"
-    local inserts = h.find(by_row, 17, h.has_virt("inline"))
-    assert.are.same({ bar_at(17, 0) }, inserts)
+    -- row 23: "> outer quote"
+    local inserts = h.find(by_row, 23, h.has_virt("inline"))
+    assert.are.same({ bar_at(23, 0) }, inserts)
   end)
 
   it("inserts a bar on every '>' of a nested quote line", function()
-    -- row 18: "> > inner quote" (outer '>' is a block_continuation, inner one a marker)
-    local inserts = h.find(by_row, 18, h.has_virt("inline"))
+    -- row 25: "> > inner quote" (outer '>' is a block_continuation, inner one a marker)
+    local inserts = h.find(by_row, 25, h.has_virt("inline"))
     table.sort(inserts, function(a, b)
       return a.col < b.col
     end)
-    assert.are.same({ bar_at(18, 0), bar_at(18, 2) }, inserts)
+    assert.are.same({ bar_at(25, 0), bar_at(25, 2) }, inserts)
   end)
 
   it("adds nothing for continuation lines without '>'", function()

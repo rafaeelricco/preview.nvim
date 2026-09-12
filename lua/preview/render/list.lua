@@ -19,7 +19,8 @@ return {
     local indent = vim.fn.strdisplaywidth(ctx.lines(row):sub(1, ecol))
     if task then
       local icon = task:type() == "task_list_marker_checked" and ctx.config.checkbox.checked or ctx.config.checkbox.unchecked
-      indent = vim.fn.strdisplaywidth(ctx.lines(row):sub(1, col)) + vim.fn.strdisplaywidth(icon) + 1
+      local text = icon .. (" "):rep(ctx.config.checkbox.gap)
+      indent = vim.fn.strdisplaywidth(ctx.lines(row):sub(1, col)) + vim.fn.strdisplaywidth(text)
     end
     ---@type preview.RowFlow[]
     local flows = {}
@@ -28,12 +29,15 @@ return {
       local tr, tc, _, tec = task:range()
       local checkbox = ctx.config.checkbox
       local icon = task:type() == "task_list_marker_checked" and checkbox.checked or checkbox.unchecked
+      local text = icon .. (" "):rep(checkbox.gap)
+      -- Swallow the marker's own trailing spaces so the gap is exactly `gap`.
+      local content = ctx.lines(row):find("[^ ]", tec + 1) or (tec + 1)
       return {
         { row = row, col = col, opts = { end_col = ecol, conceal = "" } },
         {
           row = tr,
           col = tc,
-          opts = { end_col = tec, conceal = "", virt_text = { { icon, "PreviewCheckbox" } }, virt_text_pos = "inline" },
+          opts = { end_col = content - 1, conceal = "", virt_text = { { text, "PreviewCheckbox" } }, virt_text_pos = "inline" },
         },
       }, flows
     end
@@ -45,11 +49,15 @@ return {
     local depth = node.count_ancestors(item, "list") -- 1 for top level
     local bullets = ctx.config.list.bullets
     local bullet = bullets[((depth - 1) % #bullets) + 1]
-    local adjustment = vim.fn.strdisplaywidth(bullet) - 1
+    local gap = ctx.config.list.gap
+    local text = bullet .. (" "):rep(gap)
+    -- Swallow the marker's own trailing spaces so the gap is exactly `gap`.
+    local content = ctx.lines(row):find("[^ ]", ecol + 1) or (ecol + 1)
+    local adjustment = vim.fn.strdisplaywidth(text) - (content - 1 - col)
     for _, flow in ipairs(flows) do flow.indent = flow.indent + adjustment end
     return {
-      { row = row, col = col, opts = { end_col = col + 1, conceal = "",
-        virt_text = { { bullet, "PreviewBullet" } }, virt_text_pos = "inline" } },
+      { row = row, col = col, opts = { end_col = content - 1, conceal = "",
+        virt_text = { { text, "PreviewBullet" } }, virt_text_pos = "inline" } },
     }, flows
   end,
 }

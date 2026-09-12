@@ -8,8 +8,8 @@ return {
        (atx_h4_marker) (atx_h5_marker) (atx_h6_marker)] @marker) @root
   ]],
   --- Conceals the marker (plus one trailing space), highlights the source text
-  --- by level, prepends the level icon when one is configured and adds the
-  --- level's `space_above` virtual blank lines above the heading.
+  --- by level and prepends the level icon when one is configured. Vertical
+  --- space around a heading belongs to `render.spacing`.
   ---@param ctx preview.Context
   ---@param m preview.Match
   ---@return preview.Mark[]
@@ -29,15 +29,6 @@ return {
     }
     if icon ~= "" then
       marks[#marks + 1] = { row = row, col = scol, opts = { virt_text = { { icon .. " ", hl } }, virt_text_pos = "inline" } }
-    end
-    local space = ctx.config.heading.space_above[level] or 0
-    if space > 0 then
-      ---@type preview.Chunk[][]
-      local blank = {}
-      for i = 1, space do
-        blank[i] = { { "", hl } }
-      end
-      marks[#marks + 1] = { row = row, col = 0, opts = { virt_lines = blank, virt_lines_above = true } }
     end
     return marks
   end,

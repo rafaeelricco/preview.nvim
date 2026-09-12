@@ -13,6 +13,12 @@ local function full_sources()
   }
 end
 
+--- The default heading style, so `derive` can be called with one concern.
+---@return preview.HeadingConfig
+local function heading_style()
+  return vim.deepcopy(require("preview.config").defaults.render.heading)
+end
+
 --- Reads a group with links resolved so the concrete values are visible.
 ---@param name string
 ---@return vim.api.keyset.get_hl_info
@@ -22,18 +28,34 @@ end
 
 describe("preview.ui.highlights", function()
   describe("derive", function()
-    it("keeps every heading level at the text color, all bold", function()
-      local groups = highlights.derive(full_sources())
+    it("keeps every heading level at the text color and splits them by weight", function()
+      local groups = highlights.derive(full_sources(), heading_style())
       for level = 1, 6 do
         local spec = groups["PreviewH" .. level]
         assert.equals(0x111111, spec.fg, "level " .. level)
-        assert.equals(true, spec.bold)
         assert.is_nil(spec.bg)
+      end
+      -- The terminal draws bold cells with its own bold font face, so this is
+      -- the split that gives the upper levels their weight.
+      for level = 1, 3 do
+        assert.equals(true, groups["PreviewH" .. level].bold, "level " .. level)
+      end
+      for level = 4, 6 do
+        assert.equals(false, groups["PreviewH" .. level].bold, "level " .. level)
+      end
+    end)
+
+    it("follows a configured weight per level", function()
+      local style = heading_style()
+      style.bold = { false, true, false, true, false, true }
+      local groups = highlights.derive(full_sources(), style)
+      for level = 1, 6 do
+        assert.equals(level % 2 == 0, groups["PreviewH" .. level].bold, "level " .. level)
       end
     end)
 
     it("derives each group from the plan's source and attribute", function()
-      local groups = highlights.derive(full_sources())
+      local groups = highlights.derive(full_sources(), heading_style())
       assert.are.same({ fg = 0x111111, bold = true }, groups.PreviewBold)
       assert.are.same({ italic = true }, groups.PreviewItalic)
       assert.are.same({ bg = 0xeeeeee }, groups.PreviewCodeBlock)
@@ -56,7 +78,7 @@ describe("preview.ui.highlights", function()
       local sources = full_sources()
       sources.Normal.bg = nil
       sources.CursorLine.bg = nil
-      local groups = highlights.derive(sources)
+      local groups = highlights.derive(sources, heading_style())
       assert.is_nil(groups.PreviewWinbar.bg)
       assert.is_nil(groups.PreviewButtonInactive.bg)
       assert.is_nil(groups.PreviewButtonActive.bg)
@@ -67,14 +89,14 @@ describe("preview.ui.highlights", function()
 
     it("is pure: the same sources give equal tables and the input is untouched", function()
       local sources = full_sources()
-      local first = highlights.derive(sources)
-      local second = highlights.derive(sources)
+      local first = highlights.derive(sources, heading_style())
+      local second = highlights.derive(sources, heading_style())
       assert.are.same(first, second)
       assert.are.same(full_sources(), sources)
     end)
 
     it("names only Preview* groups", function()
-      for group in pairs(highlights.derive(full_sources())) do
+      for group in pairs(highlights.derive(full_sources(), heading_style())) do
         assert.truthy(group:find("^Preview"))
       end
     end)
@@ -93,7 +115,7 @@ describe("preview.ui.highlights", function()
 
     it("writes concrete values, never links", function()
       highlights.apply()
-      for group in pairs(highlights.derive(full_sources())) do
+      for group in pairs(highlights.derive(full_sources(), heading_style())) do
         assert.equals(1, vim.fn.hlexists(group))
         local linked = vim.api.nvim_get_hl(0, { name = group })
         assert.is_nil(linked.link)

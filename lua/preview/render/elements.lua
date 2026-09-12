@@ -1,6 +1,7 @@
 --- Registry of render elements. Adding an element is one file plus one line here.
 ---@type preview.Element[]
 return {
+  require("preview.render.rhythm"),
   require("preview.render.heading"),
   require("preview.render.code"),
   require("preview.render.code_span"),
