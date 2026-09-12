@@ -15,7 +15,7 @@ M.defaults = {
       bold = { true, true, true, false, false, false },
     },
     spacing = {
-      heading = { above = { 3, 2, 2, 1, 1, 1 }, below = { 1, 1, 1, 1, 1, 1 } },
+      heading = { above = { 2, 1, 1, 1, 1, 1 }, below = { 1, 1, 1, 1, 1, 1 } },
       paragraph = { above = 1, below = 1 },
       list = { above = 1, below = 1 },
       quote = { above = 1, below = 1 },

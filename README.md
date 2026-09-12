@@ -58,7 +58,7 @@ require("preview").setup({
       bold = { true, true, true, false, false, false },   -- the terminal's bold font face, per level
     },
     spacing = {
-      heading = { above = { 3, 2, 2, 1, 1, 1 }, below = { 1, 1, 1, 1, 1, 1 } },
+      heading = { above = { 2, 1, 1, 1, 1, 1 }, below = { 1, 1, 1, 1, 1, 1 } },
       paragraph = { above = 1, below = 1 },
       list = { above = 1, below = 1 },
       quote = { above = 1, below = 1 },
@@ -148,10 +148,10 @@ The test harness isolates Neovim from your personal configuration and checks com
 
 ## Limitations
 
-- Terminals do not provide proportional font sizes or rounded corners, so heading hierarchy comes from weight and `render.spacing`, and code panels are rectangular. A terminal draws bold cells with its own bold font face, so how much heavier the upper levels look is set by your terminal's bold font, not by the plugin: in Ghostty, `font-style-bold` against `font-style`.
+- Terminals do not provide proportional font sizes or rounded corners, so heading hierarchy comes from weight, with `render.spacing` setting off a new top-level section, and code panels are rectangular. A terminal draws bold cells with its own bold font face, so how much heavier the upper levels look is set by your terminal's bold font, not by the plugin: in Ghostty, `font-style-bold` against `font-style`.
 - Very long concealed spans can still occupy native wrapped rows, which may appear blank.
 - Surplus blank rows between blocks are hidden, not removed, so `j` and `k` still step through them and the cursor can appear to pause on a row you cannot see. Nothing is lost: typing into such a row makes it non-blank and the next redraw shows it again.
 - Third-party inline decorations can change display width, so exact alignment with them is not guaranteed.
 - Two windows on the same buffer in different modes both work, with rendering scoped to each preview window.
-- Not rendered in v1: setext headings, footnotes, HTML blocks, images, multi-line links.
+- Not rendered in v1: setext headings, footnotes, HTML blocks, images, multi-line links. Mermaid is out of scope entirely; tracked at [#2](https://github.com/rafaeelricco/preview.nvim/issues/2).
 - The last chosen mode is not persisted across sessions.
