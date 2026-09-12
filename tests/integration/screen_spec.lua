@@ -350,4 +350,28 @@ describe("preview composed screen", function()
       ui.exec("vim.cmd.wincmd('l')")
     end
   end)
+
+  it("tapers the gap above each heading level", function()
+    open({ "# One", "", "## Two", "", "### Three", "", "#### Four", "", "##### Five", "", "###### Six", "", "text" })
+    -- Row 1 is the winbar. A document-opening heading takes no leading gap, and
+    -- the source blank between every pair is replaced by the designed one.
+    assert.are.same({
+      "One", "", "", "Two", "", "", "Three", "", "Four", "", "Five", "", "Six", "", "text",
+    }, vim.list_slice(ui.lines(), 2, 16))
+  end)
+
+  it("keeps adjacent code panels apart instead of merging them into one slab", function()
+    open({ "before", "", "```lua", "a()", "```", "", "```", "b()", "```", "", "after" })
+    assert.are.same({
+      "before", "", "", "  a()", "", "", "", "  b()", "", "", "after",
+    }, vim.list_slice(ui.lines(), 2, 12))
+    -- Row 7 carries the plain background, so the two panels read as two
+    -- blocks. Without it their padding rows touch and look like one panel.
+    local attrs = ui.exec([[return {
+      vim.fn.screenattr(6, 1), vim.fn.screenattr(7, 1),
+      vim.fn.screenattr(8, 1), vim.fn.screenattr(3, 1) }]])
+    assert.equals(attrs[1], attrs[3])
+    assert.equals(attrs[2], attrs[4])
+    assert.are_not.equals(attrs[1], attrs[2])
+  end)
 end)
