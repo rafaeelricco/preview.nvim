@@ -25,7 +25,10 @@ describe("render.code", function()
     assert.is_true(flows[3].fence)
     local highlights, conceals = 0, 0
     for _, mark in ipairs(marks) do
-      if mark.opts.conceal_lines then assert.is_not_nil(mark.opts.conceal) end
+      -- No element may remove a row with `conceal_lines`: Neovim redraws a
+      -- hidden row that neighbours a `virt_lines` row incorrectly while
+      -- scrolling. A fence conceals its text and keeps the row.
+      assert.is_nil(mark.opts.conceal_lines)
       assert.is_nil(mark.opts.line_hl_group)
       if mark.opts.hl_group == "PreviewCodeBlock" then highlights = highlights + 1 end
       if mark.opts.conceal ~= nil then conceals = conceals + 1 end

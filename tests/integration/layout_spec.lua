@@ -213,6 +213,102 @@ describe("editable reading layout", function()
     end
   end)
 
+  it("shades a fence's padding row to the same width as the panel's content", function()
+    -- A fence row draws no text, but native wrapping still counts its concealed
+    -- source, so the inline fill must stop short by exactly those cells. Left
+    -- uncovered, the padding rows end `#fence` cells before the content row and
+    -- the panel shows a notch down its right edge. The label makes the two
+    -- fences differ in width, so a single shared constant cannot pass this.
+    open({ '```lua', 'code', '```' })
+    -- Rows 1 and 3 are the panel's padding rows, row 2 carries the content.
+    local edges = ui.exec([[
+      local out = {}
+      for _, row in ipairs({ 1, 2, 3 }) do
+        local panel = vim.fn.screenattr(row, 21)
+        local last = 0
+        for col = 1, vim.o.columns do
+          if vim.fn.screenattr(row, col) == panel then last = col end
+        end
+        out[#out + 1] = last
+      end
+      return out
+    ]])
+    assert.equals(edges[2], edges[1])
+    assert.equals(edges[2], edges[3])
+  end)
+
+  --- Last screen column on `row` painted with the attribute at `col`.
+  local RIGHT_EDGE = [[
+    local row, col = ...
+    local want = vim.fn.screenattr(row, col)
+    local last = 0
+    for c = 1, vim.o.columns do
+      if vim.fn.screenattr(row, c) == want then last = c end
+    end
+    return last
+  ]]
+
+  it("keeps a fence wider than the panel from shading past it", function()
+    -- `edge` clamps to the panel's left when the delimiter outgrows the panel,
+    -- so an unclamped fill would run the overflow into the margin instead.
+    -- Sample inside the panel: column 1 is page background, which reaches the
+    -- window edge on every row and would compare equal for the wrong reason.
+    open({ '```typescript-with-a-very-long-info-string', 'x = 1', '```' })
+    -- Row 1 is the opening fence's padding row, row 3 carries the content.
+    local fence = ui.exec(RIGHT_EDGE, { 1, 21 })
+    local content = ui.exec(RIGHT_EDGE, { 3, 21 })
+    assert.equals(content, fence)
+  end)
+
+  it("keeps a label wider than the panel inside it", function()
+    -- The caption is drawn over the panel from a window column: inline text
+    -- would cost native columns the fence row already owes to its concealed
+    -- source, and an untruncated one would paint past the panel's right edge.
+    for _, position in ipairs({ 'left', 'right' }) do
+      open({ '```typescriptreactwithaverylonglanguagename', 'x = 1', '```' }, {
+        render = { code = { label = position } },
+      })
+      local content = ui.exec(RIGHT_EDGE, { 3, 21 })
+      -- The caption's own glyphs must not reach past where the panel ends.
+      local caption = ui.exec([[
+        local last = 0
+        for c = 1, vim.o.columns do
+          if vim.fn.screenstring(1, c):match('%S') then last = c end
+        end
+        return last
+      ]])
+      assert.is_true(caption > 0)
+      assert.is_true(caption <= content)
+      -- The content still sits one row below the caption; a label that wrapped
+      -- the fence row would push an unshaded row in between.
+      assert.equals('                      x = 1', ui.lines()[3])
+    end
+  end)
+
+  it("measures a tabbed fence row from the column it starts at", function()
+    -- A tab's width depends on the column it begins in, so measuring an
+    -- indented fence's concealed source from column zero under-counts it and
+    -- the panel fill is sized wrong. Asserted on the flow rather than the
+    -- screen: the embedded UI renders both widths identically, so only the
+    -- measurement itself distinguishes them.
+    local h = require("tests.helpers")
+    local buf, ctx = h.buffer_with({ "- item", "", "  ```lua\tfoo=1", "  print(1)", "  ```" })
+    vim.bo[buf].tabstop = 8
+    vim.bo[buf].expandtab = false
+    local element = require("preview.render.code")
+    local match = require("preview.render.query").matches(buf, { element }, 0, 4).code[1]
+    local _, flows = element.render(ctx, match)
+    local fence = flows[1]
+    assert.is_true(fence.fence)
+    -- "  ```lua\tfoo=1" starting at column 2: the tab runs to the next stop at
+    -- 8, so the concealed text spans 19 cells, not the 13 a column-zero
+    -- measurement reports.
+    assert.equals(
+      vim.fn.strdisplaywidth("```lua\tfoo=1", 2),
+      fence.source_width
+    )
+  end)
+
   it("hangs ordered and task continuations under their rendered text", function()
     open({'12. one two three four five six','- [x] one two three four five six'}, {
       view={center=false,max_width=20}, render={checkbox={checked='C',unchecked='U'}},

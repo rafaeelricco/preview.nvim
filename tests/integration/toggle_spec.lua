@@ -508,4 +508,71 @@ describe("preview toggle", function()
     assert.equals(winbar.EXPR, vim.wo[win].winbar)
     assert.equals(1, #state.preview_windows_for(buf))
   end)
+
+  it("drops conceal_lines from the markdown highlight query", function()
+    load()
+    local query = vim.treesitter.query.get("markdown", "highlights")
+    -- `has_conceal_line` is the compiled flag that removes a fence row from the
+    -- display; the whole fix is that it must no longer be set.
+    assert.is_nil(query.has_conceal_line)
+  end)
+
+  it("leaves another plugin's markdown highlight query untouched", function()
+    -- Neovim keeps no reader for an explicitly set query, so overwriting one
+    -- would discard it for the session with no way to restore it. Better to
+    -- skip the workaround than to silently break someone else's highlighting.
+    local files = vim.treesitter.query.get_files("markdown", "highlights")
+    local parts = {}
+    for _, path in ipairs(files) do
+      local handle = assert(io.open(path, "r"))
+      parts[#parts + 1] = handle:read("*a")
+      handle:close()
+    end
+    local foreign = table.concat(parts) .. "\n((atx_heading) @preview.spec.marker)\n"
+    vim.treesitter.query.set("markdown", "highlights", foreign)
+
+    local function has_marker()
+      for _, capture in ipairs(vim.treesitter.query.get("markdown", "highlights").captures) do
+        if capture == "preview.spec.marker" then
+          return true
+        end
+      end
+      return false
+    end
+    assert.is_true(has_marker())
+
+    load()
+
+    assert.is_true(has_marker())
+    assert.is_true(notified(vim.log.levels.WARN, "another markdown highlights query"))
+    vim.treesitter.query.set("markdown", "highlights", nil)
+  end)
+
+  it("restarts only the markdown highlighters that were already running", function()
+    -- Rebuilding is required because a highlighter latches the old query's
+    -- conceal_lines flag at attach, but starting one where the user turned
+    -- Treesitter highlighting off would enable a feature they disabled.
+    local active = vim.treesitter.highlighter.active
+
+    local stopped = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(stopped, 0, -1, false, { "# heading" })
+    vim.bo[stopped].filetype = "markdown"
+    vim.treesitter.start(stopped, "markdown")
+    vim.treesitter.stop(stopped)
+
+    local never = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(never, 0, -1, false, { "# heading" })
+    vim.bo[never].filetype = "markdown"
+
+    local running = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(running, 0, -1, false, { "# heading" })
+    vim.bo[running].filetype = "markdown"
+    vim.treesitter.start(running, "markdown")
+
+    load()
+
+    assert.is_nil(active[stopped])
+    assert.is_nil(active[never])
+    assert.is_not_nil(active[running])
+  end)
 end)

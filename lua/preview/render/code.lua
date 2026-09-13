@@ -23,19 +23,25 @@ return {
       flows[#flows + 1] = {
         row = row, kind = "code", start_col = start_col,
         padding = ctx.config.code.padding, background = "PreviewCodeBlock",
+        -- Native wrapping counts these source bytes even once they are
+        -- concealed, so layout subtracts them from a fence row's panel fill.
+        -- Measured from the column the text starts at, since a tab's width
+        -- depends on where it begins.
+        source_width = vim.fn.strdisplaywidth(
+          ctx.lines(row):sub(start_col + 1),
+          vim.fn.strdisplaywidth(ctx.lines(row):sub(1, start_col))
+        ),
       }
     end
     for child in m.root:iter_children() do
       if child:type() == "fenced_code_block_delimiter" then
         local row, col = child:range()
-        marks[#marks + 1] = { row = row, col = col, opts = { end_col = #ctx.lines(row), conceal = "", conceal_lines = "" } }
+        -- Conceal the delimiter's text only. The row itself stays, and layout
+        -- shades it into the panel's padding row: a row removed with
+        -- `conceal_lines` next to one carrying `virt_lines` is redrawn
+        -- incorrectly while scrolling.
+        marks[#marks + 1] = { row = row, col = col, opts = { end_col = #ctx.lines(row), conceal = "" } }
         flows[row - srow + 1].fence = true
-        local anchor = row == srow and math.min(row + 1, erow) or math.max(row - 1, srow)
-        marks[#marks + 1] = {
-          row = anchor, col = 0,
-          opts = { virt_lines = { { { string.rep(" ", ctx.width), "PreviewCodeBlock" } } },
-            virt_lines_above = row == srow },
-        }
       end
     end
     local label = ctx.config.code.label
@@ -43,18 +49,6 @@ return {
     if label and lang then
       flows[1].label = vim.treesitter.get_node_text(lang, ctx.buf)
       flows[1].label_position = label
-      local text = " " .. flows[1].label .. " "
-      while vim.fn.strdisplaywidth(text) > ctx.width do
-        text = vim.fn.strcharpart(text, 0, vim.fn.strchars(text, true) - 1, true)
-      end
-      local remaining = math.max(ctx.width - vim.fn.strdisplaywidth(text), 0)
-      for _, mark in ipairs(marks) do
-        if mark.opts.virt_lines_above then
-          local space = { string.rep(" ", remaining), "PreviewCodeBlock" }
-          local caption = { text, "PreviewCodeLabel" }
-          mark.opts.virt_lines = { label == "left" and { caption, space } or { space, caption } }
-        end
-      end
     end
     return marks, flows
   end,

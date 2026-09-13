@@ -82,6 +82,7 @@
 ---@field start_col? integer -- source content starts after a container prefix
 ---@field padding? integer
 ---@field background? string
+---@field source_width? integer -- display width of the row's concealed source
 ---@field fence? boolean
 ---@field label? string
 ---@field label_position? "left"|"right"
