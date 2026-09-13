@@ -102,6 +102,12 @@ While a window is managed, its window-local `WinBar` and `WinBarNC` highlight ma
 
 Lua API: `require("preview").setup(opts)`, `.set_mode(win, mode)`, `.toggle(win?)`, `.mode(win?)`, `.config()`.
 
+## Opening links
+
+Preview adds no link commands of its own; Neovim's own handling keeps working, and preview mode narrows it to the rendered text. With the cursor on a link, `gx` opens the destination with the system handler. In a terminal that supports OSC 8 hyperlinks, such as Ghostty, Kitty or WezTerm, the rendered link is also clickable directly — usually Cmd-click or Ctrl-click, per that terminal's binding. In `markdown` mode the clickable region spans the whole `[text](url)` source; in `preview` mode it covers just the rendered `text`, since the brackets and destination are concealed.
+
+Both paths read the destination from Neovim's bundled `markdown_inline` highlight query, not from this plugin's marks, so they need Treesitter highlighting active on the buffer (`vim.treesitter.start`, which `filetype=markdown` normally does for you). Without it, `gx` falls back to `<cfile>` and no hyperlink is emitted. The same origin sets the limits: inline links and autolinks resolve, while a reference link such as `[text][label]` yields the label rather than its destination.
+
 ## Highlights
 
 Every `Preview*` group is computed from the active palette, not linked to a stock group. `highlights.apply()` resolves `Normal`, `Comment`, `CursorLine`, `WinSeparator` and `DiagnosticInfo` with `nvim_get_hl(0, { name = ..., link = false })` and defines each group with the concrete values below. A color the source group does not define stays unset, so the group inherits it; the plugin never uses a literal color.
