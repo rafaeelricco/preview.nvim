@@ -501,6 +501,52 @@ end
 
 -- Public API -----------------------------------------------------------------
 
+--- Removes `conceal_lines` from the markdown highlight query so the fence rows
+--- stay real, drawable rows that `render.code` shades as the code panel's
+--- padding. Neovim mis-draws a `conceal_lines` row that neighbours a
+--- `virt_lines` row during a partial redraw (rows duplicate and shift while
+--- scrolling), and the runtime query concealed those rows out from under us.
+--- Session-wide and idempotent; only that one predicate is dropped, so syntax
+--- highlighting inside fences is untouched. Undo with
+--- `vim.treesitter.query.set("markdown", "highlights", nil)`.
+local function own_fence_rows()
+  -- Reconstruct exactly the source Neovim would have compiled: `get_files`
+  -- resolves `extends`/`inherits` and keeps a single base file, where
+  -- nvim_get_runtime_file would return every copy on the runtimepath and
+  -- duplicate the whole query. Files are joined with no separator, as
+  -- read_query_files does.
+  local ok, files = pcall(vim.treesitter.query.get_files, "markdown", "highlights")
+  if not ok or #files == 0 then
+    return
+  end
+  local parts = {}
+  for _, path in ipairs(files) do
+    local handle = io.open(path, "r")
+    if handle then
+      parts[#parts + 1] = handle:read("*a")
+      handle:close()
+    end
+  end
+  if #parts == 0 then
+    return
+  end
+  -- A source that itself opens with `extends`/`inherits` would make the query
+  -- inherit the runtime files on top of this one, duplicating every pattern.
+  local source = (table.concat(parts):gsub("^%s*;+%s*extends%s*\n", ""))
+  source = (source:gsub('%s*%(#set!%s+conceal_lines%s+""%)', ""))
+  if not pcall(vim.treesitter.query.set, "markdown", "highlights", source) then
+    return
+  end
+  -- A highlighter built before the override pinned the old compiled query and
+  -- its conceal_lines flag; `start` alone no-ops while the parser is attached.
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "markdown" then
+      pcall(vim.treesitter.stop, buf)
+      pcall(vim.treesitter.start, buf, "markdown")
+    end
+  end
+end
+
 ---@param opts table|nil
 function M.setup(opts)
   local resolved, err = config.resolve(opts)
@@ -509,6 +555,7 @@ function M.setup(opts)
     return
   end
   cfg = resolved
+  own_fence_rows()
   winbar.configure(cfg.winbar)
   render.configure(cfg)
   highlights.configure(cfg.highlights, cfg.render.heading)

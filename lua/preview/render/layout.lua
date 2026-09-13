@@ -609,8 +609,24 @@ function M.apply(ctx, by_row, row_flows)
 
         local final_start = points[#points] or start_col
         local final_width = M.measure(ctx, row, final_start, #ctx.lines(row), marks)
-        local trailing = math.max(available - padding - final_width, padding)
+        -- A fence row draws no text, but native wrapping still counts its
+        -- concealed source, so the inline fill has to leave room for those cells.
+        local hidden = flow.fence and (flow.source_width or 0) or 0
+        local trailing = math.max(available - padding - final_width - hidden, 0)
         if trailing > 0 then add_inline(additions, #ctx.lines(row), { chunk((" "):rep(trailing), background) }) end
+        -- Those reserved cells would leave the panel short by exactly the width
+        -- of the hidden fence text. Window-column text costs no native columns,
+        -- so it covers them without pushing the row into a wrap.
+        if hidden > 0 then
+          local edge = math.max(available - hidden, 0)
+          marks[#marks + 1] = {
+            row = row, col = start_col,
+            opts = {
+              virt_text = { chunk((" "):rep(hidden), background) },
+              virt_text_win_col = ctx.left + prefix_width + edge,
+            },
+          }
+        end
       elseif ctx.view.wrap then
         local container = ctx.lines(row):match("^([ >]+)") or ""
         local quote_prefix = container:find(">", 1, true) and container or ""
