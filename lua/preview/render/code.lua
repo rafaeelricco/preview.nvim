@@ -25,7 +25,12 @@ return {
         padding = ctx.config.code.padding, background = "PreviewCodeBlock",
         -- Native wrapping counts these source bytes even once they are
         -- concealed, so layout subtracts them from a fence row's panel fill.
-        source_width = vim.fn.strdisplaywidth(ctx.lines(row):sub(start_col + 1)),
+        -- Measured from the column the text starts at, since a tab's width
+        -- depends on where it begins.
+        source_width = vim.fn.strdisplaywidth(
+          ctx.lines(row):sub(start_col + 1),
+          vim.fn.strdisplaywidth(ctx.lines(row):sub(1, start_col))
+        ),
       }
     end
     for child in m.root:iter_children() do
