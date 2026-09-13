@@ -213,6 +213,30 @@ describe("editable reading layout", function()
     end
   end)
 
+  it("shades a fence's padding row to the same width as the panel's content", function()
+    -- A fence row draws no text, but native wrapping still counts its concealed
+    -- source, so the inline fill must stop short by exactly those cells. Left
+    -- uncovered, the padding rows end `#fence` cells before the content row and
+    -- the panel shows a notch down its right edge. The label makes the two
+    -- fences differ in width, so a single shared constant cannot pass this.
+    open({ '```lua', 'code', '```' })
+    -- Rows 1 and 3 are the panel's padding rows, row 2 carries the content.
+    local edges = ui.exec([[
+      local out = {}
+      for _, row in ipairs({ 1, 2, 3 }) do
+        local panel = vim.fn.screenattr(row, 21)
+        local last = 0
+        for col = 1, vim.o.columns do
+          if vim.fn.screenattr(row, col) == panel then last = col end
+        end
+        out[#out + 1] = last
+      end
+      return out
+    ]])
+    assert.equals(edges[2], edges[1])
+    assert.equals(edges[2], edges[3])
+  end)
+
   it("hangs ordered and task continuations under their rendered text", function()
     open({'12. one two three four five six','- [x] one two three four five six'}, {
       view={center=false,max_width=20}, render={checkbox={checked='C',unchecked='U'}},

@@ -110,6 +110,37 @@ describe("render.rhythm", function()
     end
   end)
 
+  it("keeps every element's hidden rows away from any virtual lines", function()
+    -- The same hazard, across all elements rather than rhythm's own marks: a
+    -- row removed with `conceal_lines` must never neighbour one carrying
+    -- `virt_lines`, whichever element produced either of them.
+    local function hides_row(m)
+      return m.opts.conceal_lines ~= nil
+    end
+    local function has_virt_lines(m)
+      return m.opts.virt_lines ~= nil
+    end
+    for _, lines in ipairs({
+      h.fixture("render-unit.md"),
+      h.fixture("elements.md"),
+      h.fixture("reading-view.md"),
+      { "para", "", "```lua", "code", "```", "", "next" },
+      { "# Title", "```lua", "code", "```" },
+      { "para", "", "```", "```", "", "next" },
+    }) do
+      local probe, pctx = h.buffer_with(lines)
+      local rows = h.marks_for(probe, pctx)
+      for row = 0, #lines - 1 do
+        if #h.find(rows, row, hides_row) > 0 then
+          for _, neighbour in ipairs({ row - 1, row, row + 1 }) do
+            assert.equals(0, #h.find(rows, neighbour, has_virt_lines),
+              ("hidden row %d neighbours virt_lines at %d"):format(row, neighbour))
+          end
+        end
+      end
+    end
+  end)
+
   it("sizes the gap from the configured spacing, per element kind", function()
     -- Row 16 opens the list, after the paragraph on row 14; both margins are 1
     -- by default. Widening only the list's `above` must win the collapse.
