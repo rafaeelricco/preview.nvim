@@ -585,16 +585,26 @@ function M.apply(ctx, by_row, row_flows)
         local background = flow.background or "PreviewCodeBlock"
         if padding > 0 then add_inline(additions, start_col, { chunk((" "):rep(padding), background) }) end
 
+        -- The caption is drawn over the panel from a window column rather than
+        -- inserted into the row. Inline text would cost native columns the
+        -- fence row already owes to its concealed source, wrapping the panel.
+        -- Truncate first: a label wider than the panel would otherwise paint
+        -- past its right edge.
         local label = flow.label and (" " .. flow.label .. " ") or nil
-        if label and flow.label_position == "left" then
-          add_inline(additions, start_col, { chunk(label, "PreviewCodeLabel") })
-        elseif label and flow.label_position == "right" then
+        if label then
+          local budget = math.max(available - 2 * padding, 1)
+          while text_width(ctx, label, 0) > budget do
+            label = vim.fn.strcharpart(label, 0, vim.fn.strchars(label, true) - 1, true)
+          end
           local label_width = text_width(ctx, label, 0)
+          local offset = flow.label_position == "right"
+            and math.max(available - padding - label_width, 0)
+            or padding
           marks[#marks + 1] = {
             row = row, col = start_col,
             opts = {
               virt_text = { chunk(label, "PreviewCodeLabel") },
-              virt_text_win_col = ctx.left + prefix_width + math.max(available - padding - label_width, 0),
+              virt_text_win_col = ctx.left + prefix_width + offset,
             },
           }
         end
@@ -616,13 +626,15 @@ function M.apply(ctx, by_row, row_flows)
         if trailing > 0 then add_inline(additions, #ctx.lines(row), { chunk((" "):rep(trailing), background) }) end
         -- Those reserved cells would leave the panel short by exactly the width
         -- of the hidden fence text. Window-column text costs no native columns,
-        -- so it covers them without pushing the row into a wrap.
+        -- so it covers them without pushing the row into a wrap. A delimiter
+        -- wider than the panel keeps the fill inside it: `edge` clamps to the
+        -- left edge, so the width has to clamp to what remains.
         if hidden > 0 then
           local edge = math.max(available - hidden, 0)
           marks[#marks + 1] = {
             row = row, col = start_col,
             opts = {
-              virt_text = { chunk((" "):rep(hidden), background) },
+              virt_text = { chunk((" "):rep(math.min(hidden, available)), background) },
               virt_text_win_col = ctx.left + prefix_width + edge,
             },
           }
