@@ -21,7 +21,13 @@ describe("render.link", function()
       { row = 41, col = 11, opts = { end_col = 33, conceal = "" } },
     }, conceals)
     assert.are.same(
-      { { row = 41, col = 3, opts = { end_col = 11, hl_group = "PreviewLink" } } },
+      {
+        {
+          row = 41,
+          col = 3,
+          opts = { end_col = 11, hl_group = "PreviewLink", url = "https://example.com" },
+        },
+      },
       h.find(by_row, 41, h.has_hl("PreviewLink"))
     )
   end)
@@ -54,5 +60,16 @@ describe("render.link", function()
       assert.equals(0, #h.find(by_row, row, h.has_hl("PreviewLink")), "row " .. row)
       assert.equals(0, #h.find(by_row, row, h.has_virt("inline")), "row " .. row)
     end
+  end)
+
+  --- A required (link_destination) capture would make the pattern conjunctive,
+  --- so an empty destination would stop matching and the brackets would show.
+  it("still conceals a link whose destination is empty", function()
+    local other, other_ctx = h.buffer_with({ "A [empty]() link." })
+    local rows = h.marks_for(other, other_ctx)
+    assert.equals(2, #h.find(rows, 0, h.is_conceal))
+    local highlighted = h.find(rows, 0, h.has_hl("PreviewLink"))
+    assert.equals(1, #highlighted)
+    assert.is_nil(highlighted[1].opts.url)
   end)
 end)
