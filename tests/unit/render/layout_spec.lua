@@ -5,7 +5,7 @@ describe("reading layout", function()
     return {
       buf = 0, win = 0, display_signature = "", tick = 0,
       config = require("preview.config").defaults.render,
-      width = 20, window_width = 40, left = 10, leftcol = 0, top = 0, bot = 0,
+      width = 20, window_width = 40, window_height = 24, left = 10, leftcol = 0, top = 0, bot = 0,
       view = { wrap = true, max_width = 20, center = true, gutter = 0 },
       tabstop = 4, vartabstop = "", lines = function() return line end,
     }
