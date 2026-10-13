@@ -61,9 +61,14 @@ function M.collect(ctx, elems, matches)
   for _, element in ipairs(elems) do
     ---@type preview.Mark[]
     local produced, produced_flows = {}, {}
+    -- A renderer may need to validate its output against earlier matches from
+    -- the same element (tables, in particular, share virtual-line anchors).
+    -- Work on a copy so a failed element still leaves the previous render set
+    -- intact.
+    local working = element.name == "table" and vim.deepcopy(by_row) or by_row
     local ok = true
     for _, match in ipairs(matches[element.name] or {}) do
-      local success, result, flows = pcall(element.render, ctx, match, by_row)
+      local success, result, flows = pcall(element.render, ctx, match, working)
       if not success then
         ok = false
         if not failed[element.name] then
@@ -75,22 +80,61 @@ function M.collect(ctx, elems, matches)
       vim.list_extend(produced_flows, flows or {})
       for _, mark in ipairs(result) do
         produced[#produced + 1] = mark
+        if element.name == "table" then
+          local row_marks = working[mark.row]
+          if not row_marks then
+            row_marks = {}
+            working[mark.row] = row_marks
+          end
+          row_marks[#row_marks + 1] = mark
+        end
       end
     end
     if ok then
+      local raw_rows = {}
       for _, flow in ipairs(produced_flows) do
         local previous = row_flows[flow.row]
-        if not previous or rank[flow.kind] >= rank[previous.kind] then
+        if flow.raw then
+          raw_rows[flow.row] = true
+          local merged = vim.deepcopy(previous or flow)
+          merged.raw = true
+          row_flows[flow.row] = merged
+        elseif flow.replacement or not previous or rank[flow.kind] >= rank[previous.kind] then
           row_flows[flow.row] = flow
         end
       end
-      for _, mark in ipairs(produced) do
-        local list = by_row[mark.row]
-        if not list then
-          list = {}
-          by_row[mark.row] = list
+      -- Raw fallback must keep Markdown delimiters and other inline source
+      -- visible. Preserve highlights, but discard prior marks that conceal or
+      -- insert text into the table's source rows.
+      for row in pairs(raw_rows) do
+        local existing = by_row[row]
+        if existing then
+          local kept = {}
+          for _, mark in ipairs(existing) do
+            local opts = mark.opts or {}
+            if opts.conceal == nil and not (opts.virt_text and opts.virt_text_pos == "inline") then
+              kept[#kept + 1] = mark
+            end
+          end
+          by_row[row] = kept
         end
-        list[#list + 1] = mark
+      end
+      for _, mark in ipairs(produced) do
+        local skip = false
+        if raw_rows[mark.row] then
+          local opts = mark.opts or {}
+          if opts.conceal ~= nil or opts.virt_text and opts.virt_text_pos == "inline" then
+            skip = true
+          end
+        end
+        if not skip then
+          local list = by_row[mark.row]
+          if not list then
+            list = {}
+            by_row[mark.row] = list
+          end
+          list[#list + 1] = mark
+        end
       end
     end
   end

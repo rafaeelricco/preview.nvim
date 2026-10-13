@@ -14,6 +14,7 @@ function M.new(buf, win, top, bot, config)
   local last = math.max(line_count - 1, 0)
   local info = vim.fn.getwininfo(win)[1]
   local textoff = info and info.textoff or 0
+  local window_height = math.max(vim.api.nvim_win_get_height(win), 1)
   local window_width = math.max(vim.api.nvim_win_get_width(win) - textoff, 1)
   local wrap = vim.wo[win].wrap
   -- Cells a nowrap window is scrolled right; win_col marks are drawn from
@@ -48,12 +49,13 @@ function M.new(buf, win, top, bot, config)
     win = win,
     width = width,
     window_width = window_width,
+    window_height = window_height,
     left = left,
     leftcol = leftcol,
     view = view,
     tabstop = tabstop,
     vartabstop = vartabstop,
-    display_signature = table.concat({ tabstop, vartabstop, vim.o.ambiwidth, vim.o.display, tostring(wrap), leftcol }, "|"),
+    display_signature = table.concat({ tabstop, vartabstop, vim.o.ambiwidth, vim.o.display, tostring(wrap), leftcol, window_height }, "|"),
     top = math.max(math.min(top, last), 0),
     bot = math.max(math.min(bot, last), 0),
     tick = vim.b[buf].changedtick,

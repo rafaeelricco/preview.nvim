@@ -17,8 +17,11 @@ function M.new(width, height)
     ui.exec("vim.wait(10, function() return false end); vim.cmd('redraw!')")
   end
   function ui.resize(w, h)
-    width, height = w, h
     ui.request("nvim_ui_try_resize", w, h)
+    -- Neovim clamps tiny UI sizes (for example, columns >= 12). Read the
+    -- accepted size rather than silently clipping the composed screen.
+    local size = ui.exec("return {vim.o.columns, vim.o.lines}") --[=[@as integer[]]=]
+    width, height = size[1], size[2]
     ui.redraw()
   end
   function ui.lines()
@@ -38,6 +41,8 @@ function M.new(width, height)
     vim.fn.jobstop(channel)
   end
   ui.request("nvim_ui_attach", width, height, { rgb = true })
+  local size = ui.exec("return {vim.o.columns, vim.o.lines}") --[=[@as integer[]]=]
+  width, height = size[1], size[2]
   ui.exec([[
     vim.opt.rtp:prepend(...)
     vim.o.hidden = true
