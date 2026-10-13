@@ -8,7 +8,7 @@ end
 local NORMAL = "Normal"
 
 ---@param text string
----@param hl? string
+---@param hl? string|string[]
 ---@return preview.Chunk
 local function chunk(text, hl)
   return { text, hl or NORMAL }
@@ -59,6 +59,8 @@ local function text_width(ctx, text, col)
   return width
 end
 
+M.text_width = text_width
+
 ---@param window_width integer
 ---@param view preview.View
 ---@return integer width, integer left
@@ -80,6 +82,7 @@ end
 ---@field text string
 ---@field start_col integer
 ---@field end_col integer
+---@field hl? string|string[]
 
 ---@param ctx preview.Context
 ---@param row integer
@@ -94,7 +97,7 @@ local function visible_atoms(ctx, row, start_col, end_col, marks)
 
   ---@type table<integer, preview.Chunk[]>
   local inline = {}
-  ---@type { start_col: integer, end_col: integer, replacement: string }[]
+  ---@type { start_col: integer, end_col: integer, replacement: string, hl?: string }[]
   local ranges = {}
   for _, mark in ipairs(marks or {}) do
     local opts = mark.opts or {}
@@ -107,6 +110,7 @@ local function visible_atoms(ctx, row, start_col, end_col, marks)
         start_col = math.max(mark.col, start_col),
         end_col = math.min(opts.end_col or mark.col, end_col),
         replacement = opts.conceal,
+        hl = opts.hl_group,
       }
     end
   end
@@ -117,7 +121,7 @@ local function visible_atoms(ctx, row, start_col, end_col, marks)
 
   --- Conceal ranges form a union. A replacement belongs to that visible run,
   --- rather than to every overlapping extmark in it.
-  ---@type { start_col: integer, end_col: integer, replacement: string }[]
+  ---@type { start_col: integer, end_col: integer, replacement: string, hl?: string }[]
   local concealed = {}
   for _, range in ipairs(ranges) do
     local last = concealed[#concealed]
@@ -133,26 +137,90 @@ local function visible_atoms(ctx, row, start_col, end_col, marks)
 
   ---@type preview.LayoutAtom[]
   local atoms = {}
-  local function add(text, first, last)
-    if text ~= "" then atoms[#atoms + 1] = { text = text, start_col = first, end_col = last } end
+  local function add(text, first, last, hl)
+    if text ~= "" then atoms[#atoms + 1] = { text = text, start_col = first, end_col = last, hl = hl } end
   end
 
   local col, range_index = start_col, 1
   while col < end_col do
-    for _, item in ipairs(inline[col] or {}) do add(item[1], col, col) end
+    for _, item in ipairs(inline[col] or {}) do add(item[1], col, col, item[2]) end
     local range = concealed[range_index]
     if range and col == range.start_col then
-      add(range.replacement, col, range.end_col)
+      local text = range.replacement
+      if text ~= "" then
+        atoms[#atoms + 1] = {
+          text = text, start_col = col, end_col = range.end_col,
+          hl = range.hl,
+        }
+      end
       col = range.end_col
       range_index = range_index + 1
     else
       local char = character(line, col)
       if not char then break end
-      add(char, col, col + #char)
+      atoms[#atoms + 1] = {
+        text = char, start_col = col, end_col = col + #char,
+      }
       col = col + #char
     end
   end
   return atoms
+end
+
+--- Returns the visible text with its existing inline and syntax highlight
+--- groups intact. `default_hl` is applied only to plain source characters.
+---@param ctx preview.Context
+---@param row integer
+---@param start_col integer
+---@param end_col integer
+---@param marks preview.Mark[]
+---@param default_hl? string
+---@return preview.Chunk[]
+function M.rich_chunks(ctx, row, start_col, end_col, marks, default_hl)
+  local out = {}
+  local previous_key
+  local function append(text, groups)
+    if text == "" then return end
+    local stack, seen = {}, {}
+    local function add(group)
+      if type(group) == "table" then
+        for _, item in ipairs(group) do add(item) end
+      elseif group and not seen[group] then
+        stack[#stack + 1] = group
+        seen[group] = true
+      end
+    end
+    add(default_hl or NORMAL)
+
+    local active = {}
+    for index, mark in ipairs(marks or {}) do
+      local opts = mark.opts or {}
+      local finish = opts.end_col or mark.col
+      if opts.hl_group and mark.col <= groups.col and finish > groups.col then
+        active[#active + 1] = { group = opts.hl_group, priority = opts.priority or 100, index = index }
+      end
+    end
+    table.sort(active, function(a, b)
+      if a.priority ~= b.priority then return a.priority < b.priority end
+      return a.index < b.index
+    end)
+    for _, item in ipairs(active) do add(item.group) end
+    if groups.inline then add(groups.inline) end
+
+    local key = table.concat(stack, "\0")
+    local hl = #stack == 1 and stack[1] or stack
+    local previous = out[#out]
+    if previous and previous_key == key then
+      previous[1] = previous[1] .. text
+    else
+      out[#out + 1] = chunk(text, hl)
+      previous_key = key
+    end
+  end
+  for _, atom in ipairs(visible_atoms(ctx, row, start_col, end_col, marks)) do
+    append(atom.text, { col = atom.start_col, inline = atom.hl })
+  end
+  return out
 end
 
 ---@param ctx preview.Context
@@ -417,6 +485,20 @@ local function wrap_row(ctx, row, marks, additions, start_col, end_col,
   return points
 end
 
+---@param ctx preview.Context
+---@param row integer
+---@param marks preview.Mark[]
+---@return boolean
+function M.source_row_fits(ctx, row, marks)
+  local line = ctx.lines(row)
+  local additions = {}
+  if ctx.left > 0 then additions[0] = { chunk((" "):rep(ctx.left)) } end
+  local _, _, absolute = native_column(ctx, line, marks, additions, #line)
+  absolute = native_event_width(ctx, absolute, native_mark_events(marks)[#line], additions[#line])
+  if absolute > ctx.window_width then return false end
+  return #wrap_row(ctx, row, marks, additions, 0, #line, ctx.width, ctx.width, {}) == 0
+end
+
 ---@param marks preview.Mark[]
 ---@param additions table<integer, preview.Chunk[]>
 ---@param row integer
@@ -532,52 +614,12 @@ function M.apply(ctx, by_row, row_flows)
     local additions = {}
     local left = ctx.left > 0 and { chunk((" "):rep(ctx.left)) } or {}
 
-    if flow and flow.kind == "table" and flow.fields and #flow.fields > 0 then
-      local container_width, container_text = M.measure(ctx, row, 0, flow.start_col or 0, marks)
-      local available = math.max(ctx.width - container_width, 1)
-      local function base()
-        local chunks = vim.deepcopy(left)
-        if container_text ~= "" then chunks[#chunks + 1] = chunk(container_text, "PreviewQuote") end
-        return chunks
-      end
-      add_inline(additions, 0, left)
-      for index, field in ipairs(flow.fields) do
-        local label = field.label and (field.label .. ": ") or ""
-        local label_width = 0
-        local label_offset = index == 1 and (native_column(ctx, ctx.lines(row), marks, additions, field.start_col) - ctx.left - container_width) or 0
-        local prefix = index == 1 and {} or base()
-        -- Labels are virtual, but still obey the column in very narrow views.
-        for char_index = 0, vim.fn.strchars(label, true) - 1 do
-          local char = vim.fn.strcharpart(label, char_index, 1, true)
-          local size = text_width(ctx, char, label_width)
-          if label_width > 0 and label_width + size > available then
-            prefix[#prefix + 1] = chunk((" "):rep(math.max(ctx.window_width - ctx.left - container_width - label_width - label_offset, 0)))
-            vim.list_extend(prefix, base())
-            label_width, label_offset = 0, 0
-          end
-          prefix[#prefix + 1] = chunk(char, "PreviewTableHeader")
-          label_width = label_width + size
-        end
-        if label_width >= available then
-          prefix[#prefix + 1] = chunk((" "):rep(math.max(ctx.window_width - ctx.left - container_width - label_width - label_offset, 0)))
-          vim.list_extend(prefix, base())
-          label_width = 0
-        end
-        if index == 1 then
-          add_inline(additions, field.start_col, prefix)
-        else
-          force_break(ctx, row, marks, additions, field.start_col, prefix)
-        end
-        if ctx.view.wrap then
-          local continuation = base()
-          continuation[#continuation + 1] = chunk((" "):rep(label_width))
-          wrap_row(ctx, row, marks, additions, field.start_col, field.end_col,
-            available - label_width, available - label_width, continuation)
-        end
-      end
+    if flow and flow.replacement then
+      -- The row is hidden by conceal_lines; its replacement is virtual content
+      -- anchored elsewhere and must not receive source-row layout additions.
     else
       add_inline(additions, 0, left)
-      if flow and flow.kind == "code" then
+      if flow and flow.kind == "code" and not flow.raw then
         local start_col = flow.start_col or 0
         local prefix_width, prefix_text = M.measure(ctx, row, 0, start_col, marks)
         local available = math.max(ctx.width - prefix_width, 1)
@@ -639,7 +681,7 @@ function M.apply(ctx, by_row, row_flows)
             },
           }
         end
-      elseif ctx.view.wrap then
+      elseif ctx.view.wrap and not (flow and flow.raw) then
         local container = ctx.lines(row):match("^([ >]+)") or ""
         local quote_prefix = container:find(">", 1, true) and container or ""
         local indent = flow and flow.kind == "list" and (flow.indent or 0) or #quote_prefix
@@ -657,8 +699,10 @@ function M.apply(ctx, by_row, row_flows)
       end
     end
 
-    shift_non_inline(ctx, row, marks)
-    out[row] = merge_inline(marks, additions, row)
+    if not (flow and flow.replacement) then
+      shift_non_inline(ctx, row, marks)
+      out[row] = merge_inline(marks, additions, row)
+    end
   end
   return out
 end

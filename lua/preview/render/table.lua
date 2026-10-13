@@ -1,4 +1,5 @@
 local layout = require("preview.render.layout")
+local blocks = require("preview.render.blocks")
 
 local MIN_WIDTH = 3
 local BORDER = "PreviewTable"
@@ -254,66 +255,432 @@ local function decorate_grid_row(row, widths, marks, line)
   end
 end
 
+---@param hl string|string[]
+---@return string
+local function highlight_key(hl)
+  if type(hl) == "table" then return table.concat(hl, "\0") end
+  return hl
+end
+
+---@param chunks preview.Chunk[]
+---@param text string
+---@param hl string|string[]
+local function append_chunk(chunks, text, hl)
+  if text == "" then return end
+  local previous = chunks[#chunks]
+  if previous and highlight_key(previous[2]) == highlight_key(hl) then
+    previous[1] = previous[1] .. text
+  else
+    chunks[#chunks + 1] = { text, hl }
+  end
+end
+
+---@param target preview.Chunk[]
+---@param source preview.Chunk[]
+local function append_chunks(target, source)
+  for _, chunk in ipairs(source) do append_chunk(target, chunk[1], chunk[2]) end
+end
+
+---@param ctx preview.Context
+---@param chunks preview.Chunk[]
+---@param width integer
+---@return preview.Chunk[][]|nil
+local function wrap_chunks(ctx, chunks, width)
+  if width < 1 then return nil end
+  ---@type { text: string, hl: string|string[], whitespace: boolean }[]
+  local tokens = {}
+  for _, item in ipairs(chunks) do
+    for index = 0, vim.fn.strchars(item[1], true) - 1 do
+      local char = vim.fn.strcharpart(item[1], index, 1, true)
+      tokens[#tokens + 1] = {
+        text = char,
+        hl = item[2],
+        whitespace = char:match("^%s+$") ~= nil,
+      }
+    end
+  end
+
+  ---@type preview.Chunk[][]
+  local lines = { {} }
+  local line_width = 0
+  local function new_line()
+    lines[#lines + 1] = {}
+    line_width = 0
+  end
+  local function measure(tokens_to_measure, start)
+    local used = start
+    for _, token in ipairs(tokens_to_measure) do
+      used = used + layout.text_width(ctx, token.text, used)
+    end
+    return used - start
+  end
+  local function append_tokens(tokens_to_append)
+    for _, token in ipairs(tokens_to_append) do
+      local size = layout.text_width(ctx, token.text, line_width)
+      local text = token.text == "\t" and (" "):rep(size) or token.text
+      append_chunk(lines[#lines], text, token.hl)
+      line_width = line_width + size
+    end
+  end
+
+  local index, pending = 1, {}
+  while index <= #tokens do
+    if tokens[index].whitespace then
+      pending[#pending + 1] = tokens[index]
+      index = index + 1
+    else
+      local word = {}
+      while index <= #tokens and not tokens[index].whitespace do
+        word[#word + 1] = tokens[index]
+        index = index + 1
+      end
+
+      local pending_width = measure(pending, line_width)
+      local word_width = measure(word, line_width + pending_width)
+      if line_width > 0 and line_width + pending_width + word_width > width then
+        pending = {}
+        new_line()
+      else
+        append_tokens(pending)
+        pending = {}
+      end
+
+      word_width = measure(word, line_width)
+      if line_width + word_width <= width then
+        append_tokens(word)
+      else
+        for _, token in ipairs(word) do
+          local size = layout.text_width(ctx, token.text, line_width)
+          if size > width then return nil end
+          if line_width > 0 and line_width + size > width then
+            new_line()
+            size = layout.text_width(ctx, token.text, line_width)
+          end
+          if size > width then return nil end
+          append_tokens({ token })
+        end
+      end
+    end
+  end
+  if #pending > 0 and line_width + measure(pending, line_width) <= width then
+    append_tokens(pending)
+  end
+  return lines
+end
+
 ---@param rows preview.TableRow[]
----@return string[]
-local function header_labels(rows)
-  local labels = {}
+---@param widths integer[]
+---@param ctx preview.Context
+---@param prior_marks table<integer, preview.Mark[]>
+---@return preview.Chunk[][]|nil
+local function grid_lines(rows, widths, ctx, prior_marks)
+  ---@type preview.Chunk[][]
+  local out = {}
+  local function add_rule(text)
+    out[#out + 1] = { { text, BORDER } }
+  end
+  if ctx.config.table.border then
+    add_rule(rule(widths, "┌", "┬", "┐"))
+  end
+  local middle = rule(widths, "├", "┼", "┤")
+  for row_index, row in ipairs(rows) do
+    if row.kind == "delimiter" then
+      add_rule(middle)
+    else
+      local wrapped = {}
+      local height = 1
+      for col, width in ipairs(widths) do
+        local cell = row.cells[col]
+        local chunks = cell and layout.rich_chunks(ctx, row.row, cell.start_col, cell.end_col,
+          prior_marks[row.row] or {}, row.kind == "header" and HEADER or BODY) or {}
+        local lines = wrap_chunks(ctx, chunks, width)
+        if not lines then return nil end
+        wrapped[col] = lines
+        height = math.max(height, #lines)
+      end
+      for line_index = 1, height do
+        local line = {}
+        append_chunk(line, "│", BORDER)
+        for col, width in ipairs(widths) do
+          append_chunk(line, " ", "Normal")
+          local content = wrapped[col][line_index] or {}
+          append_chunks(line, content)
+          local used = 0
+          for _, item in ipairs(content) do
+            used = used + layout.text_width(ctx, item[1], used)
+          end
+          append_chunk(line, (" "):rep(math.max(width - used, 0) + 1), "Normal")
+          append_chunk(line, "│", BORDER)
+        end
+        out[#out + 1] = line
+      end
+      if ctx.config.table.row_lines and row.kind == "body" then
+        local later_body = false
+        for next_index = row_index + 1, #rows do
+          if rows[next_index].kind == "body" then later_body = true break end
+        end
+        if later_body then add_rule(middle) end
+      end
+    end
+  end
+  if ctx.config.table.border then
+    add_rule(rule(widths, "└", "┴", "┘"))
+  end
+  return out
+end
+
+---@param rows preview.TableRow[]
+---@param ctx preview.Context
+---@param prior_marks table<integer, preview.Mark[]>
+---@param width integer
+---@return preview.Chunk[][]|nil
+local function stack_lines(rows, ctx, prior_marks, width)
+  ---@type preview.Chunk[][]
+  local out = {}
+  local function add_rule()
+    out[#out + 1] = { { ("─"):rep(width), BORDER } }
+  end
+  if ctx.config.table.border then add_rule() end
+
+  local labels, header_chunks = {}, {}
+  local columns = 0
+  for _, row in ipairs(rows) do
+    if row.kind ~= "delimiter" then columns = math.max(columns, #row.cells) end
+  end
   for _, row in ipairs(rows) do
     if row.kind == "header" then
       for index, cell in ipairs(row.cells) do
         labels[index] = cell.text ~= "" and cell.text or ("Column %d"):format(index)
+        header_chunks[index] = cell.text ~= ""
+          and layout.rich_chunks(ctx, row.row, cell.start_col, cell.end_col, prior_marks[row.row] or {}, HEADER)
+          or { { labels[index], HEADER } }
       end
       break
     end
   end
-  return labels
+  for index = 1, columns do
+    if not labels[index] then
+      labels[index] = ("Column %d"):format(index)
+      header_chunks[index] = { { labels[index], HEADER } }
+    end
+  end
+
+  local body_rows = {}
+  for _, row in ipairs(rows) do if row.kind == "body" then body_rows[#body_rows + 1] = row end end
+  if #body_rows == 0 then
+    for index, chunks in ipairs(header_chunks) do
+      local field = {}
+      append_chunks(field, chunks)
+      append_chunk(field, ": ", HEADER)
+      local wrapped = wrap_chunks(ctx, field, width)
+      if not wrapped then return nil end
+      vim.list_extend(out, wrapped)
+      if ctx.config.table.row_lines and index < #header_chunks then add_rule() end
+    end
+  else
+    for body_index, row in ipairs(body_rows) do
+      for col = 1, #labels do
+        local field = {}
+        append_chunks(field, header_chunks[col] or { { ("Column %d"):format(col), HEADER } })
+        append_chunk(field, ": ", HEADER)
+        local cell = row.cells[col]
+        if cell then
+          append_chunks(field, layout.rich_chunks(ctx, row.row, cell.start_col, cell.end_col,
+            prior_marks[row.row] or {}, BODY))
+        end
+        local wrapped = wrap_chunks(ctx, field, width)
+        if not wrapped then return nil end
+        vim.list_extend(out, wrapped)
+      end
+      if ctx.config.table.row_lines and body_index < #body_rows then add_rule() end
+    end
+  end
+  if ctx.config.table.border then add_rule() end
+  return out
 end
 
----@param row preview.TableRow
+---@param widths integer[]
+---@param available integer
+---@return integer[]|nil
+local function shrink_widths(widths, available)
+  local result = vim.deepcopy(widths)
+  local function total()
+    local value = #result + 1
+    for _, width in ipairs(result) do value = value + width + 2 end
+    return value
+  end
+  while total() > available do
+    local widest, selected = MIN_WIDTH, nil
+    for index, width in ipairs(result) do
+      if width > widest then widest, selected = width, index end
+    end
+    if not selected then return nil end
+    result[selected] = result[selected] - 1
+  end
+  return result
+end
+
+---@param block preview.Block
+---@param side "above"|"below"
+---@param spacing preview.SpacingConfig
+---@return integer
+local function block_margin(block, side, spacing)
+  local value = spacing[block.kind][side]
+  return type(value) == "table" and (value[block.level or 1] or 0) or value
+end
+
+---@param root TSNode
+---@param rows preview.TableRow[]
+---@param ctx preview.Context
+---@param prior_marks table<integer, preview.Mark[]>
+---@return integer|nil anchor, integer|nil trailing_gap
+local function safe_anchor(root, rows, ctx, prior_marks)
+  local node = root
+  while true do
+    local parent = node:parent()
+    if not parent then break end
+    local kind = parent:type()
+    if kind ~= "section" and kind ~= "document" then return nil end
+    node = parent
+  end
+  if node:type() ~= "document" then return nil end
+
+  local all_blocks = blocks.of(node, ctx.lines)
+  local table_index
+  for index, block in ipairs(all_blocks) do
+    if block.kind == "table" and block.srow == rows[1].row then table_index = index break end
+  end
+  if not table_index or table_index == 1 or table_index == #all_blocks then return nil end
+  local previous, current, following = all_blocks[table_index - 1], all_blocks[table_index], all_blocks[table_index + 1]
+  if not previous.anchor or not following.anchor or previous.kind == "table" or following.kind == "table" then return nil end
+  if previous.kind == "list" or previous.kind == "quote" or previous.kind == "code"
+    or following.kind == "list" or following.kind == "quote" or following.kind == "code" then
+    return nil
+  end
+  if current.erow ~= rows[#rows].row or current.srow ~= rows[1].row then return nil end
+  if current.srow ~= previous.erow + 2 or following.srow ~= current.erow + 2 then return nil end
+  -- The leading source separator becomes the trailing rendered gap. Spaces
+  -- or tabs can wrap that separator, so only empty rows have a safe height.
+  if ctx.lines(previous.erow + 1) ~= "" or ctx.lines(current.erow + 1) ~= "" then
+    return nil
+  end
+
+  local spacing = ctx.config.spacing
+  local before = math.max(block_margin(previous, "below", spacing), block_margin(current, "above", spacing))
+  local after = math.max(block_margin(current, "below", spacing), block_margin(following, "above", spacing))
+  if before ~= 1 or after ~= 1 then return nil end
+
+  local anchor = previous.erow
+  local anchor_width = layout.measure(ctx, anchor, 0, #ctx.lines(anchor), prior_marks[anchor] or {})
+  local preceding = root:prev_named_sibling()
+  if anchor_width > ctx.width and not (preceding and preceding:type() == "paragraph") then return nil end
+  return anchor, current.erow + 1
+end
+
+---@param prior_marks table<integer, preview.Mark[]>
 ---@param marks preview.Mark[]
-local function conceal_structure(row, marks)
-  if #row.cells == 0 then
-    conceal(marks, row.row, row.start_col, row.end_col)
-    return
+---@return boolean
+local function safe_virtual_spacing(prior_marks, marks)
+  local concealed, virtual = {}, {}
+  for row, row_marks in pairs(prior_marks) do
+    for _, mark in ipairs(row_marks) do
+      local opts = mark.opts or {}
+      if opts.conceal_lines ~= nil then concealed[row] = true end
+      if opts.virt_lines and #opts.virt_lines > 0 then virtual[row] = true end
+    end
   end
-  conceal(marks, row.row, row.start_col, row.cells[1].start_col)
-  for index, cell in ipairs(row.cells) do
-    local next_cell = row.cells[index + 1]
-    conceal(marks, row.row, cell.end_col,
-      next_cell and next_cell.start_col or row.end_col)
+  for _, mark in ipairs(marks) do
+    local opts = mark.opts or {}
+    if opts.conceal_lines ~= nil then concealed[mark.row] = true end
+    if opts.virt_lines and #opts.virt_lines > 0 then virtual[mark.row] = true end
   end
+  for row in pairs(concealed) do
+    for neighbor = row - 1, row + 1 do
+      if virtual[neighbor] then return false end
+    end
+  end
+  return true
+end
+
+---@param ctx preview.Context
+---@param lines preview.Chunk[][]
+---@param width integer
+---@return boolean
+local function lines_fit(ctx, lines, width)
+  for _, line in ipairs(lines) do
+    local used = 0
+    for _, item in ipairs(line) do
+      local size = layout.text_width(ctx, item[1], used)
+      if size > width - used then return false end
+      used = used + size
+    end
+  end
+  return true
 end
 
 ---@param rows preview.TableRow[]
----@param marks preview.Mark[]
+---@param raw boolean
 ---@return preview.RowFlow[]
-local function decorate_stack(rows, marks)
-  local labels = header_labels(rows)
-  ---@type preview.RowFlow[]
+local function source_flows(rows, raw)
   local flows = {}
   for _, row in ipairs(rows) do
-    conceal_structure(row, marks)
-    ---@type preview.Field[]
-    local fields = {}
-    local hl = row.kind == "header" and HEADER or BODY
-    if row.kind ~= "delimiter" then
-      for index, cell in ipairs(row.cells) do
-        highlight(marks, row.row, cell.start_col, cell.end_col, hl)
-        fields[#fields + 1] = {
-          start_col = cell.start_col,
-          end_col = cell.end_col,
-          label = row.kind == "body" and (labels[index] or ("Column %d"):format(index)) or nil,
-        }
-      end
-    end
-    flows[#flows + 1] = {
-      row = row.row,
-      kind = "table",
-      start_col = row.start_col,
-      fields = fields,
-    }
+    flows[#flows + 1] = { row = row.row, kind = "table", raw = raw or nil }
   end
   return flows
+end
+
+---@param root TSNode
+---@param rows preview.TableRow[]
+---@param widths integer[]
+---@param available integer
+---@param ctx preview.Context
+---@param prior_marks table<integer, preview.Mark[]>
+---@param container_width integer
+---@return preview.Mark[], preview.RowFlow[]
+local function render_overflow(root, rows, widths, available, ctx, prior_marks, container_width)
+  local function raw()
+    return {}, source_flows(rows, true)
+  end
+  if container_width > 0 then return raw() end
+
+  local anchor, trailing_gap = safe_anchor(root, rows, ctx, prior_marks)
+  if not anchor or not trailing_gap then return raw() end
+  for row = anchor - 1, anchor + 1 do
+    for _, mark in ipairs(prior_marks[row] or {}) do
+      if (mark.opts or {}).virt_lines then return raw() end
+      if row == anchor then
+        local opts = mark.opts or {}
+        if opts.virt_text or opts.conceal_lines ~= nil then return raw() end
+      end
+    end
+  end
+
+  local grid_widths = shrink_widths(widths, available)
+  local rendered = grid_widths and grid_lines(rows, grid_widths, ctx, prior_marks)
+  if rendered and not lines_fit(ctx, rendered, available) then rendered = nil end
+  if not rendered then rendered = stack_lines(rows, ctx, prior_marks, available) end
+  if not rendered or not lines_fit(ctx, rendered, available) then return raw() end
+  ---@type preview.Chunk[][]
+  local virt_lines = { { { "", "Normal" } } }
+  vim.list_extend(virt_lines, rendered)
+  -- Neovim cannot reliably scroll a virtual block taller than its viewport.
+  -- Reserve one line for the source anchor and one for the visible trailing gap.
+  if #virt_lines + 2 > ctx.window_height then return raw() end
+
+  ---@type preview.Mark[]
+  local marks = {
+    { row = anchor, col = 0, opts = { virt_lines = virt_lines } },
+  }
+  for row = rows[1].row, rows[#rows].row do
+    marks[#marks + 1] = { row = row, col = 0, opts = { conceal_lines = "" } }
+  end
+  marks[#marks + 1] = { row = trailing_gap, col = 0, opts = { conceal_lines = "" } }
+  if not safe_virtual_spacing(prior_marks, marks) then return raw() end
+
+  local flows = source_flows(rows, false)
+  flows[#flows + 1] = { row = trailing_gap, kind = "table", replacement = true }
+  for _, flow in ipairs(flows) do flow.replacement = true end
+  return marks, flows
 end
 
 ---@param row preview.TableRow
@@ -355,9 +722,7 @@ return {
 
     local container_width = layout.measure(ctx, rows[1].row, 0, rows[1].start_col, prior_marks[rows[1].row] or {})
     if ctx.view.wrap and natural_width + container_width > ctx.width then
-      local marks = {}
-      local flows = decorate_stack(rows, marks)
-      return marks, flows
+      return render_overflow(m.root, rows, widths, ctx.width - container_width, ctx, prior_marks, container_width)
     end
 
     ---@type preview.Mark[]
@@ -404,6 +769,16 @@ return {
               { rule_prefix(row, prior_marks, ctx) .. middle, BORDER },
             })
           end
+        end
+      end
+    end
+    if ctx.view.wrap then
+      local candidate = {}
+      for _, row in ipairs(rows) do candidate[row.row] = vim.list_extend({}, prior_marks[row.row] or {}) end
+      for _, mark in ipairs(marks) do table.insert(candidate[mark.row], mark) end
+      for _, row in ipairs(rows) do
+        if not layout.source_row_fits(ctx, row.row, candidate[row.row]) then
+          return render_overflow(m.root, rows, widths, ctx.width - container_width, ctx, prior_marks, container_width)
         end
       end
     end

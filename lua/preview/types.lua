@@ -51,6 +51,7 @@
 ---@field win integer
 ---@field width integer      -- reading column width
 ---@field window_width integer
+---@field window_height integer -- text height available to this window
 ---@field left integer
 ---@field leftcol integer     -- cells the window is scrolled right; 0 when wrapping
 ---@field view preview.View
@@ -68,12 +69,7 @@
 ---@field col integer
 ---@field opts vim.api.keyset.set_extmark  -- stored decorations, never ephemeral
 
----@alias preview.Chunk { [1]: string, [2]: string }
-
----@class preview.Field
----@field start_col integer
----@field end_col integer
----@field label? string
+---@alias preview.Chunk { [1]: string, [2]: string|string[] }
 
 ---@class preview.RowFlow
 ---@field row integer
@@ -86,7 +82,8 @@
 ---@field fence? boolean
 ---@field label? string
 ---@field label_position? "left"|"right"
----@field fields? preview.Field[] -- force a screen break before each field
+---@field raw? boolean -- preserve native source rendering; do not synthesize wraps
+---@field replacement? boolean -- this source row is replaced by virtual content
 
 
 ---@class preview.Element
